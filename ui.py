@@ -1,8 +1,3 @@
-
-HARSH DIXIT
-6:45 PM (0 minutes ago)
-to me
-
 import os
 import sys
 import tempfile
