@@ -253,6 +253,8 @@ if query:
                     )
 
                     # Call Mistral
+                    import time 
+                    time.sleep(1)
                     response = llm.invoke(messages)
 
                     # Display answer
