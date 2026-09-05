@@ -1,0 +1,91 @@
+# ==========================
+# LangChain
+# ==========================
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langchain-mistralai
+langchain-text-splitters
+langchain-chroma
+
+# ==========================
+# Vector Database
+# ==========================
+chromadb
+
+# ==========================
+# Embedding Models
+# ==========================
+sentence-transformers
+
+# ==========================
+# OpenAI
+# ==========================
+openai
+
+# ==========================
+# Mistral AI
+# ==========================
+mistralai
+
+# ==========================
+# Environment Variables
+# ==========================
+python-dotenv
+
+# ==========================
+# Token Counting
+# ==========================
+tiktoken
+
+# ==========================
+# Document Loaders
+# ==========================
+pypdf
+pymupdf
+python-docx
+unstructured
+markdown
+beautifulsoup4
+lxml
+
+# ==========================
+# OCR (Optional)
+# ==========================
+pytesseract
+Pillow
+
+# ==========================
+# Web Scraping
+# ==========================
+requests
+
+# ==========================
+# FastAPI (API)
+# ==========================
+fastapi
+uvicorn
+
+# ==========================
+# Streamlit (Frontend)
+# ==========================
+streamlit
+
+# ==========================
+# Utilities
+# ==========================
+numpy
+pandas
+
+# ==========================
+# Logging & Progress
+# ==========================
+tqdm
+
+# ==========================
+# Optional Monitoring
+# ==========================
+langsmith
+
+pysqlite3-binary
