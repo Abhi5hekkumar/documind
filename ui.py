@@ -1,6 +1,12 @@
+
+HARSH DIXIT
+6:45 PM (0 minutes ago)
+to me
+
 import os
 import sys
 import tempfile
+import time
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -12,166 +18,238 @@ sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_mistralai import MistralAIEmbeddings, ChatMistralAI
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_mistralai import ChatMistralAI
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 
 
-# ---------- Environment ----------
+# ============================================================
+# ENVIRONMENT
+# ============================================================
+
 load_dotenv()
 
 
-# ---------- Project ----------
+# ============================================================
+# PROJECT
+# ============================================================
+
 PROJECT_NAME = "DocuMind"
 
 st.set_page_config(
-    page_title=f"{PROJECT_NAME} | Chat with your PDF",
-    page_icon="📄"
+page_title=f"{PROJECT_NAME} | Chat with your PDF",
+page_icon="📄"
 )
 
 st.title(f"📄 {PROJECT_NAME}")
 st.caption("Upload a PDF and chat with it using AI.")
 
 
-# ---------- Session State ----------
+# ============================================================
+# SESSION STATE
+# ============================================================
+
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+st.session_state.chat_history = []
 
 if "retriever" not in st.session_state:
-    st.session_state.retriever = None
+st.session_state.retriever = None
 
 if "pdf_name" not in st.session_state:
-    st.session_state.pdf_name = None
+st.session_state.pdf_name = None
+
+if "last_llm_call" not in st.session_state:
+st.session_state.last_llm_call = 0.0
 
 
-# ---------- Mistral API Key ----------
-# Streamlit Cloud:
-# Settings → Secrets
-#
-# Add:
-# MISTRAL_API_KEY = "your-api-key"
+# ============================================================
+# MISTRAL API KEY
+# ============================================================
 
 try:
-    MISTRAL_API_KEY = st.secrets["MISTRAL_API_KEY"]
+MISTRAL_API_KEY = st.secrets["MISTRAL_API_KEY"]
 except Exception:
-    MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
 
 if not MISTRAL_API_KEY:
-    st.error(
-        "MISTRAL_API_KEY is not configured. "
-        "Add it to Streamlit Secrets or your environment variables."
-    )
-    st.stop()
+st.error(
+"MISTRAL_API_KEY is not configured. "
+"Add it to Streamlit Secrets or your environment variables."
+)
+st.stop()
 
 
-# ---------- Upload PDF ----------
+# ============================================================
+# MODELS
+# ============================================================
+
+@st.cache_resource
+def load_embedding_model():
+"""
+Local embedding model.
+This does NOT use the Mistral API.
+"""
+return HuggingFaceEmbeddings(
+model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
+
+
+@st.cache_resource
+def load_llm(api_key):
+"""
+Mistral is used only for generating the final answer.
+"""
+return ChatMistralAI(
+model="mistral-small-latest",
+temperature=0,
+api_key=api_key
+)
+
+
+embedding_model = load_embedding_model()
+llm = load_llm(MISTRAL_API_KEY)
+
+
+# ============================================================
+# UPLOAD PDF
+# ============================================================
+
 upload_col, clear_col = st.columns([4, 1])
 
 with upload_col:
-    uploaded_file = st.file_uploader(
-        "📤 Upload your PDF here",
-        type=["pdf"]
-    )
+uploaded_file = st.file_uploader(
+"📤 Upload your PDF here",
+type=["pdf"]
+)
 
 with clear_col:
-    st.write("")
-    st.write("")
+st.write("")
+st.write("")
 
-    if st.button("🗑️ Clear Chat"):
-        st.session_state.chat_history = []
-        st.rerun()
+if st.button("🗑️ Clear Chat"):
+st.session_state.chat_history = []
+st.rerun()
 
 
-# ---------- Process PDF ----------
+# ============================================================
+# PROCESS PDF
+# ============================================================
+
 if (
-    uploaded_file is not None
-    and uploaded_file.name != st.session_state.pdf_name
+uploaded_file is not None
+and uploaded_file.name != st.session_state.pdf_name
 ):
 
-    with st.spinner("Processing PDF..."):
+with st.spinner("Processing PDF..."):
 
-        # Save uploaded PDF temporarily
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".pdf"
-        ) as tmp_file:
+# ----------------------------------------------------
+# Save uploaded PDF temporarily
+# ----------------------------------------------------
 
-            tmp_file.write(uploaded_file.read())
-            tmp_path = tmp_file.name
+with tempfile.NamedTemporaryFile(
+delete=False,
+suffix=".pdf"
+) as tmp_file:
 
-        try:
-            # Load PDF
-            loader = PyPDFLoader(tmp_path)
-            docs = loader.load()
+tmp_file.write(uploaded_file.read())
+tmp_path = tmp_file.name
 
-            # Split PDF into chunks
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200
-            )
+try:
 
-            chunks = splitter.split_documents(docs)
+# ------------------------------------------------
+# Load PDF
+# ------------------------------------------------
 
-            # Mistral embeddings
-            embedding_model = MistralAIEmbeddings(
-                model="mistral-embed",
-                api_key=MISTRAL_API_KEY
-            )
+loader = PyPDFLoader(tmp_path)
+docs = loader.load()
 
-            # Create vector store
-            vectorstore = Chroma.from_documents(
-                documents=chunks,
-                embedding=embedding_model
-            )
+# ------------------------------------------------
+# Split PDF into chunks
+# ------------------------------------------------
 
-            # Create retriever
-            st.session_state.retriever = vectorstore.as_retriever(
-                search_type="mmr",
-                search_kwargs={
-                    "k": 4,
-                    "fetch_k": 10,
-                    "lambda_mult": 0.5
-                }
-            )
+splitter = RecursiveCharacterTextSplitter(
+chunk_size=1000,
+chunk_overlap=200
+)
 
-            st.session_state.pdf_name = uploaded_file.name
-            st.session_state.chat_history = []
+chunks = splitter.split_documents(docs)
 
-        finally:
-            # Delete temporary PDF
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+# ------------------------------------------------
+# LOCAL EMBEDDINGS
+# ------------------------------------------------
+#
+# IMPORTANT:
+# We are NOT using Mistral embeddings here.
+#
+# This prevents the PDF processing and retrieval
+# stages from consuming Mistral API requests.
+#
 
-    st.success(
-        f"'{uploaded_file.name}' processed successfully!"
-    )
+vectorstore = Chroma.from_documents(
+documents=chunks,
+embedding=embedding_model
+)
+
+# ------------------------------------------------
+# Create retriever
+# ------------------------------------------------
+
+st.session_state.retriever = vectorstore.as_retriever(
+search_type="mmr",
+search_kwargs={
+"k": 4,
+"fetch_k": 10,
+"lambda_mult": 0.5
+}
+)
+
+# ------------------------------------------------
+# Save PDF information
+# ------------------------------------------------
+
+st.session_state.pdf_name = uploaded_file.name
+st.session_state.chat_history = []
+
+finally:
+
+# ------------------------------------------------
+# Delete temporary PDF
+# ------------------------------------------------
+
+if os.path.exists(tmp_path):
+os.remove(tmp_path)
+
+st.success(
+f"'{uploaded_file.name}' processed successfully!"
+)
 
 
-# ---------- Current PDF ----------
+# ============================================================
+# CURRENT PDF
+# ============================================================
+
 if st.session_state.pdf_name:
-    st.info(
-        f"📌 Currently chatting with: "
-        f"**{st.session_state.pdf_name}**"
-    )
+
+st.info(
+f"📌 Currently chatting with: "
+f"**{st.session_state.pdf_name}**"
+)
 
 
 st.divider()
 
 
-# ---------- LLM ----------
-llm = ChatMistralAI(
-    model="mistral-small-latest",
-    temperature=0,
-    api_key=MISTRAL_API_KEY
-)
+# ============================================================
+# PROMPT
+# ============================================================
 
-
-# ---------- Prompt ----------
 prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """
+[
+(
+"system",
+"""
 You are a helpful AI assistant.
 
 Use ONLY the provided context to answer the question.
@@ -179,98 +257,176 @@ Use ONLY the provided context to answer the question.
 If the answer is not present in the context, say:
 
 "I could not find the answer in the document."
+
+Do not make up information.
+Do not use outside knowledge.
+Keep the answer clear and relevant.
 """
-        ),
-        (
-            "human",
-            """
+),
+(
+"human",
+"""
 Context:
+
 {context}
 
 Question:
+
 {question}
 """
-        )
-    ]
+)
+]
 )
 
 
-# ---------- Display Chat History ----------
+# ============================================================
+# DISPLAY CHAT HISTORY
+# ============================================================
+
 for role, message in st.session_state.chat_history:
 
-    with st.chat_message(role):
-        st.markdown(message)
+with st.chat_message(role):
+st.markdown(message)
 
 
-# ---------- Chat Input ----------
+# ============================================================
+# CHAT INPUT
+# ============================================================
+
 query = st.chat_input(
-    "Ask something about the PDF..."
+"Ask something about the PDF..."
 )
 
 
 if query:
 
-    # Make sure a PDF has been uploaded
-    if st.session_state.retriever is None:
+# --------------------------------------------------------
+# Make sure a PDF has been uploaded
+# --------------------------------------------------------
 
-        st.warning(
-            "Please upload a PDF first."
-        )
+if st.session_state.retriever is None:
 
-    else:
+st.warning(
+"Please upload a PDF first."
+)
 
-        # Add user message
-        st.session_state.chat_history.append(
-            ("user", query)
-        )
+else:
 
-        with st.chat_message("user"):
-            st.markdown(query)
+# ----------------------------------------------------
+# Add user message to history
+# ----------------------------------------------------
+
+st.session_state.chat_history.append(
+("user", query)
+)
+
+with st.chat_message("user"):
+st.markdown(query)
 
 
-        # Assistant response
-        with st.chat_message("assistant"):
+# ----------------------------------------------------
+# Assistant response
+# ----------------------------------------------------
 
-            with st.spinner("Thinking..."):
+with st.chat_message("assistant"):
 
-                try:
+with st.spinner("Thinking..."):
 
-                    # Retrieve relevant document chunks
-                    docs = st.session_state.retriever.invoke(
-                        query
-                    )
+try:
 
-                    # Combine retrieved chunks
-                    context = "\n\n".join(
-                        doc.page_content
-                        for doc in docs
-                    )
+# ========================================
+# STEP 1: RETRIEVE DOCUMENT CHUNKS
+# ========================================
 
-                    # Create prompt messages
-                    messages = prompt.format_messages(
-                        context=context,
-                        question=query
-                    )
+docs = st.session_state.retriever.invoke(
+query
+)
 
-                    # Call Mistral
-                    import time 
-                    time.sleep(1)
-                    response = llm.invoke(messages)
 
-                    # Display answer
-                    st.markdown(response.content)
+# ========================================
+# STEP 2: COMBINE CONTEXT
+# ========================================
 
-                    # Save answer to chat history
-                    st.session_state.chat_history.append(
-                        ("assistant", response.content)
-                    )
+context = "\n\n".join(
+doc.page_content
+for doc in docs
+)
 
-                except Exception as e:
 
-                    st.error(
-                        f"Error type: {type(e).__name__}"
-                    )
+# ========================================
+# STEP 3: CREATE PROMPT
+# ========================================
 
-                    st.error(str(e))
+messages = prompt.format_messages(
+context=context,
+question=query
+)
 
-                    st.exception(e)
+
+# ========================================
+# STEP 4: RATE-LIMIT PROTECTION
+# ========================================
+#
+# Your Mistral chat limit is about
+# 2 requests/second.
+#
+# We wait at least 1 second between
+# requests from this Streamlit session.
+#
+
+current_time = time.time()
+
+elapsed = (
+current_time
+- st.session_state.last_llm_call
+)
+
+if elapsed < 1.0:
+
+time.sleep(
+1.0 - elapsed
+)
+
+
+# ========================================
+# STEP 5: CALL MISTRAL
+# ========================================
+
+response = llm.invoke(messages)
+
+st.session_state.last_llm_call = time.time()
+
+
+# ========================================
+# STEP 6: DISPLAY ANSWER
+# ========================================
+
+st.markdown(
+response.content
+)
+
+
+# ========================================
+# STEP 7: SAVE ANSWER
+# ========================================
+
+st.session_state.chat_history.append(
+(
+"assistant",
+response.content
+)
+)
+
+
+except Exception as e:
+
+st.error(
+f"Error type: {type(e).__name__}"
+)
+
+st.error(
+str(e)
+)
+
+# Useful during development
+st.exception(e)
