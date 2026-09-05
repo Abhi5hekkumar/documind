@@ -8,6 +8,7 @@ langchain-openai
 langchain-mistralai
 langchain-text-splitters
 langchain-chroma
+langchain-huggingface
 
 # ==========================
 # Vector Database
@@ -88,4 +89,7 @@ tqdm
 # ==========================
 langsmith
 
+# ==========================
+# SQLite compatibility
+# ==========================
 pysqlite3-binary
